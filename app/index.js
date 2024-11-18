@@ -10,16 +10,14 @@ export default function Home() {
   const handleFileSelect = async (file) => {
     try {
       setIsLoading(true);
-      // We'll implement the actual file upload later
+      const fileId = await appwrite.uploadPDF(file);
       router.push({
         pathname: "/processing",
-        params: {
-          fileId: "test",
-          fileName: file.name || "Selected PDF",
-        },
+        params: { fileId, fileName: file.name || "Selected PDF" },
       });
     } catch (error) {
       console.error(error);
+      Alert.alert("Upload Error", "Failed to upload file. Please try again.");
     } finally {
       setIsLoading(false);
     }
