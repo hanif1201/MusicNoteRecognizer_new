@@ -1,47 +1,91 @@
-import { Client, Storage, Databases, ID } from "appwrite";
+// services/appwrite.js
+import { Client, Storage, Databases, ID } from "react-native-appwrite";
 import { APPWRITE_CONFIG } from "../constants/config";
 
+const client = new Client();
+
+client
+  .setEndpoint("https://cloud.appwrite.io/v1")
+  .setProject(APPWRITE_CONFIG.projectId);
+
+const storage = new Storage(client);
+const databases = new Databases(client); // Make sure this is initialized
+
 class AppwriteService {
-  constructor() {
-    this.client = new Client()
-      .setEndpoint(APPWRITE_CONFIG.endpoint)
-      .setProject(APPWRITE_CONFIG.projectId);
-
-    this.storage = new Storage(this.client);
-    this.databases = new Databases(this.client);
-  }
-
   async uploadPDF(file) {
+    if (!file) return;
+
     try {
-      const response = await this.storage.createFile(
+      console.log("Starting upload with raw file:", file);
+
+      const { mimeType, uri, name, size } = file;
+      const asset = {
+        type: mimeType,
+        uri,
+        name,
+        size,
+      };
+
+      console.log("Formatted asset for upload:", asset);
+
+      const uploadedFile = await storage.createFile(
         APPWRITE_CONFIG.bucketId,
         ID.unique(),
-        file
+        asset
       );
-      return response.$id;
+
+      console.log("Upload response:", uploadedFile);
+      console.log("Upload completed, received ID:", uploadedFile.$id);
+
+      return uploadedFile.$id;
     } catch (error) {
       console.error("Upload error:", error);
       throw error;
     }
   }
 
+  getFileUrl(fileId) {
+    return storage.getFileView(APPWRITE_CONFIG.bucketId, fileId);
+  }
+
+  // Add the saveResult function
   async saveResult(result) {
     try {
-      return await this.databases.createDocument(
+      console.log("Saving result:", result);
+
+      // Create the page data object
+      const pageData = JSON.stringify({
+        pageNumber: 1,
+        notes: [],
+        dimensions: {
+          width: 595,
+          height: 842,
+        },
+      });
+
+      const document = await databases.createDocument(
         APPWRITE_CONFIG.databaseId,
         APPWRITE_CONFIG.collectionId,
         ID.unique(),
-        result
+        {
+          fileId: result.fileId,
+          fileName: result.fileName,
+          processedAt: new Date().toISOString(),
+          status: "processed",
+          totalPages: 1,
+          pageData: pageData, // Now it's a string
+        }
       );
+
+      console.log("Save response:", document);
+      return document;
     } catch (error) {
       console.error("Save error:", error);
       throw error;
     }
   }
-
-  getFileUrl(fileId) {
-    return this.storage.getFileView(APPWRITE_CONFIG.bucketId, fileId);
-  }
 }
 
-export const appwriteService = new AppwriteService();
+// Create and export a single instance
+const appwriteService = new AppwriteService();
+export { appwriteService };

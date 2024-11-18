@@ -1,42 +1,51 @@
+// app/processing.js
 import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Alert } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { View, StyleSheet } from "react-native";
 import { ProcessingOverlay } from "../components/ProcessingOverlay";
 import { appwriteService } from "../services/appwrite";
 import { THEME } from "../constants/theme";
+import { useLocalSearchParams, router } from "expo-router";
 
 export default function Processing() {
   const [progress, setProgress] = useState(0);
   const { fileId, fileName } = useLocalSearchParams();
 
   useEffect(() => {
-    processFile();
+    processPDF();
   }, []);
 
-  const processFile = async () => {
+  const processPDF = async () => {
     try {
-      setProgress(10);
+      setProgress(50);
 
-      // Get file URL from Appwrite
-      const fileUrl = appwriteService.getFileUrl(fileId);
+      const pageData = {
+        pageNumber: 1,
+        notes: [],
+        dimensions: {
+          width: 595,
+          height: 842,
+        },
+      };
 
-      // Simulate processing steps
-      await simulateProcessing();
-
-      // Save result
-      const result = {
+      const result = await appwriteService.saveResult({
         fileId,
         fileName,
         processedAt: new Date().toISOString(),
-        notes: [], // We'll add actual notes later
-      };
+        totalPages: 1,
+        pageData: JSON.stringify(pageData), // Stringify for storage
+      });
 
-      await appwriteService.saveResult(result);
+      setProgress(100);
 
-      // Navigate to results
+      // Pass the stringified data directly
       router.replace({
         pathname: "/results",
-        params: { result: JSON.stringify(result) },
+        params: {
+          fileId,
+          fileName,
+          resultId: result.$id,
+          pageData: JSON.stringify(pageData), // Add stringified pageData to params
+        },
       });
     } catch (error) {
       console.error("Processing error:", error);
@@ -45,15 +54,6 @@ export default function Processing() {
         "Failed to process the file. Please try again.",
         [{ text: "OK", onPress: () => router.back() }]
       );
-    }
-  };
-
-  const simulateProcessing = async () => {
-    // Temporary function to simulate processing steps
-    const steps = [30, 50, 70, 90, 100];
-    for (const step of steps) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setProgress(step);
     }
   };
 

@@ -1,22 +1,34 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { THEME } from "../constants/theme";
-import { FileUpload } from "../components/FileUpload";
+import { View, Text, StyleSheet, Alert } from "react-native";
 import { router } from "expo-router";
+import { FileUpload } from "../components/FileUpload";
+import { appwriteService } from "../services/appwrite";
+import { THEME } from "../constants/theme";
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleFileSelect = async (file) => {
+  const handleFileSelect = async (fileInfo) => {
     try {
       setIsLoading(true);
-      const fileId = await appwrite.uploadPDF(file);
+      console.log("Processing file:", fileInfo);
+
+      const fileId = await appwriteService.uploadPDF(fileInfo);
+      console.log("Upload completed, received ID:", fileId);
+
+      if (!fileId) {
+        throw new Error("No file ID received from upload");
+      }
+
       router.push({
         pathname: "/processing",
-        params: { fileId, fileName: file.name || "Selected PDF" },
+        params: {
+          fileId: fileId,
+          fileName: fileInfo.name,
+        },
       });
     } catch (error) {
-      console.error(error);
+      console.error("File upload failed:", error);
       Alert.alert("Upload Error", "Failed to upload file. Please try again.");
     } finally {
       setIsLoading(false);

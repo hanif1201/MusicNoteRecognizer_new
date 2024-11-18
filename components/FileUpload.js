@@ -8,14 +8,26 @@ export const FileUpload = ({ onFileSelect, isLoading }) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "application/pdf",
-        copyToCacheDirectory: true,
       });
 
-      if (result.assets && result.assets[0]) {
-        onFileSelect(result.assets[0]);
+      console.log("Document picker result:", result);
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        // Maintain the exact structure with mimeType
+        const file = {
+          uri: result.assets[0].uri,
+          mimeType: result.assets[0].mimeType, // Keep as mimeType
+          name: result.assets[0].name,
+          size: result.assets[0].size,
+        };
+
+        console.log("Processed file:", file);
+        onFileSelect(file);
       }
     } catch (err) {
-      console.error("Document picking error:", err);
+      if (!DocumentPicker.isCancel(err)) {
+        console.error("Document picking error:", err);
+      }
     }
   };
 

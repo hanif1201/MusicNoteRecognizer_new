@@ -1,17 +1,48 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+// app/results.js
+import React, { useState, useEffect } from "react";
+import { View, StyleSheet, ActivityIndicator } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { THEME } from "../constants/theme";
+import { AnnotatedPDF } from "../components/AnnotatedPDF";
+import { appwriteService } from "../services/appwrite";
+import { processMusicSheet } from "../services/musicRecognition";
 
 export default function Results() {
-  const { result } = useLocalSearchParams();
-  const parsedResult = JSON.parse(result);
+  const params = useLocalSearchParams();
+  const [isProcessing, setIsProcessing] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [annotations, setAnnotations] = useState([]);
+  const fileUrl = appwriteService.getFileUrl(params.fileId);
+
+  useEffect(() => {
+    processPage();
+  }, [currentPage]);
+
+  const processPage = async () => {
+    try {
+      setIsProcessing(true);
+      // Here we'll add the music note recognition logic
+      const notes = await processMusicSheet(fileUrl, currentPage);
+      setAnnotations(notes);
+    } catch (error) {
+      console.error("Processing error:", error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Processing Complete</Text>
-      <Text style={styles.text}>File: {parsedResult.fileName}</Text>
-      <Text style={styles.text}>Processed at: {parsedResult.processedAt}</Text>
+      <AnnotatedPDF
+        fileUrl={fileUrl}
+        annotations={annotations}
+        onPageChange={(page) => setCurrentPage(page)}
+      />
+      {isProcessing && (
+        <View style={styles.processingOverlay}>
+          <ActivityIndicator size='large' color={THEME.colors.primary} />
+        </View>
+      )}
     </View>
   );
 }
@@ -19,18 +50,12 @@ export default function Results() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: THEME.spacing.large,
     backgroundColor: THEME.colors.background,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: THEME.spacing.large,
-    color: THEME.colors.text,
-  },
-  text: {
-    fontSize: 16,
-    marginBottom: THEME.spacing.medium,
-    color: THEME.colors.text,
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
   },
 });
