@@ -21,6 +21,7 @@ export default function Results() {
   const [fileUrl, setFileUrl] = useState(null);
   const [error, setError] = useState(null);
   const [dimensions, setDimensions] = useState(null);
+  const [imageData, setImageData] = useState(null);
 
   useEffect(() => {
     loadFile();
@@ -44,30 +45,34 @@ export default function Results() {
       setError(err.message);
     }
   };
+  const handleImageData = async (data) => {
+    console.log("Received image data:", {
+      width: data.width,
+      height: data.height,
+      dataLength: data.pixels.length,
+    });
+    setImageData(data);
+    // Process the page after we have image data
+    processPage(currentPage, data);
+  };
 
-  const processPage = async (pageNumber) => {
+  const processPage = async (pageNumber, pageImageData) => {
     try {
       setIsProcessing(true);
-      console.log("Processing page with dimensions:", dimensions);
 
-      // Wait for dimensions to be available
-      if (!dimensions) {
-        console.log("Waiting for dimensions...");
+      const dataToProcess = pageImageData || imageData;
+      if (!dataToProcess) {
+        console.log("No image data available yet");
         return;
       }
 
-      // Add proper error checking for dimensions
-      const imageData = {
-        width: Math.floor(dimensions.width) || 595,
-        height: Math.floor(dimensions.height) || 842,
-        // Create a proper size array filled with mock data (white background)
-        data: new Uint8Array(
-          Math.floor(dimensions.width * dimensions.height * 4)
-        ).fill(255),
-      };
+      console.log("Processing page with image data:", {
+        width: dataToProcess.width,
+        height: dataToProcess.height,
+      });
 
-      const notes = await processMusicSheet(fileUrl, pageNumber, imageData);
-      console.log("Processed notes:", notes);
+      const notes = await processMusicSheet(fileUrl, pageNumber, dataToProcess);
+      console.log("Detected notes:", notes);
       setAnnotations(notes);
     } catch (err) {
       console.error("Error processing page:", err);
@@ -108,6 +113,7 @@ export default function Results() {
               fileUrl={fileUrl}
               annotations={annotations}
               onPageChange={handlePageChange}
+              onImageData={handleImageData}
             />
 
             {isProcessing && (
