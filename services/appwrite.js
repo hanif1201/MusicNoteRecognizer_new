@@ -2,28 +2,27 @@
 import { Client, Storage, Databases, ID } from "react-native-appwrite";
 import { APPWRITE_CONFIG } from "../constants/config";
 
-const client = new Client();
-
-client
+// Initialize the client at the module level
+const client = new Client()
   .setEndpoint("https://cloud.appwrite.io/v1")
   .setProject(APPWRITE_CONFIG.projectId);
 
+// Initialize storage service
 const storage = new Storage(client);
-const databases = new Databases(client); // Make sure this is initialized
+const databases = new Databases(client);
 
 class AppwriteService {
-  async uploadPDF(file) {
-    if (!file) return;
+  async uploadPDF(fileInfo) {
+    if (!fileInfo) return;
 
     try {
-      console.log("Starting upload with raw file:", file);
+      console.log("Starting upload with raw file:", fileInfo);
 
-      const { mimeType, uri, name, size } = file;
       const asset = {
-        type: mimeType,
-        uri,
-        name,
-        size,
+        type: fileInfo.mimeType,
+        name: fileInfo.name,
+        size: fileInfo.size,
+        uri: fileInfo.uri,
       };
 
       console.log("Formatted asset for upload:", asset);
@@ -45,23 +44,21 @@ class AppwriteService {
   }
 
   getFileUrl(fileId) {
-    return storage.getFileView(APPWRITE_CONFIG.bucketId, fileId);
+    try {
+      // Get base URL without adding project parameter (it's already included)
+      const url = storage.getFileView(APPWRITE_CONFIG.bucketId, fileId);
+
+      console.log("Generated file URL:", url);
+      return url;
+    } catch (error) {
+      console.error("Error generating file URL:", error);
+      throw error;
+    }
   }
 
-  // Add the saveResult function
   async saveResult(result) {
     try {
       console.log("Saving result:", result);
-
-      // Create the page data object
-      const pageData = JSON.stringify({
-        pageNumber: 1,
-        notes: [],
-        dimensions: {
-          width: 595,
-          height: 842,
-        },
-      });
 
       const document = await databases.createDocument(
         APPWRITE_CONFIG.databaseId,
@@ -70,10 +67,10 @@ class AppwriteService {
         {
           fileId: result.fileId,
           fileName: result.fileName,
-          processedAt: new Date().toISOString(),
-          status: "processed",
-          totalPages: 1,
-          pageData: pageData, // Now it's a string
+          processedAt: result.processedAt,
+          totalPages: result.totalPages,
+          pageData: result.pageData,
+          status: "processed", // Add this required field
         }
       );
 
@@ -86,6 +83,4 @@ class AppwriteService {
   }
 }
 
-// Create and export a single instance
-const appwriteService = new AppwriteService();
-export { appwriteService };
+export const appwriteService = new AppwriteService();

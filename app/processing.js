@@ -33,6 +33,7 @@ export default function Processing() {
         processedAt: new Date().toISOString(),
         totalPages: 1,
         pageData: JSON.stringify(pageData), // Stringify for storage
+        status: "processing",
       });
 
       setProgress(100);
