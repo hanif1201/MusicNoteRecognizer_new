@@ -11,6 +11,7 @@ import { useLocalSearchParams } from "expo-router";
 import { THEME } from "../constants/theme";
 import { AnnotatedPDF } from "../components/AnnotatedPDF";
 import { appwriteService } from "../services/appwrite";
+import { processMusicSheet } from "../services/musicRecognition"; // Add this import
 
 export default function Results() {
   const params = useLocalSearchParams();
@@ -19,6 +20,7 @@ export default function Results() {
   const [annotations, setAnnotations] = useState([]);
   const [fileUrl, setFileUrl] = useState(null);
   const [error, setError] = useState(null);
+  const [dimensions, setDimensions] = useState(null);
 
   useEffect(() => {
     loadFile();
@@ -46,24 +48,27 @@ export default function Results() {
   const processPage = async (pageNumber) => {
     try {
       setIsProcessing(true);
+      console.log("Processing page with dimensions:", dimensions);
 
-      // For now, using mock annotations
-      const mockAnnotations = [
-        {
-          id: "note1",
-          type: "note",
-          position: { x: 100, y: 150 },
-          value: "C4",
-        },
-        {
-          id: "note2",
-          type: "note",
-          position: { x: 200, y: 150 },
-          value: "E4",
-        },
-      ];
+      // Wait for dimensions to be available
+      if (!dimensions) {
+        console.log("Waiting for dimensions...");
+        return;
+      }
 
-      setAnnotations(mockAnnotations);
+      // Add proper error checking for dimensions
+      const imageData = {
+        width: Math.floor(dimensions.width) || 595,
+        height: Math.floor(dimensions.height) || 842,
+        // Create a proper size array filled with mock data (white background)
+        data: new Uint8Array(
+          Math.floor(dimensions.width * dimensions.height * 4)
+        ).fill(255),
+      };
+
+      const notes = await processMusicSheet(fileUrl, pageNumber, imageData);
+      console.log("Processed notes:", notes);
+      setAnnotations(notes);
     } catch (err) {
       console.error("Error processing page:", err);
       setError(err.message);
@@ -72,10 +77,13 @@ export default function Results() {
     }
   };
 
-  const handlePageChange = async (page, dimensions) => {
-    console.log("Page changed:", page, "Dimensions:", dimensions);
+  const handlePageChange = async (page, newDimensions) => {
+    console.log("Page changed:", page, "New dimensions:", newDimensions);
     setCurrentPage(page);
-    await processPage(page);
+    if (newDimensions) {
+      setDimensions(newDimensions);
+      await processPage(page);
+    }
   };
 
   if (error) {

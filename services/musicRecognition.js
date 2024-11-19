@@ -1,208 +1,213 @@
 // services/musicRecognition.js
-import * as FileSystem from "expo-file-system";
+import { ImageProcessor } from "./imageProcessing";
 
-export class MusicNoteDetector {
+class MusicSheetAnalyzer {
   constructor() {
-    this.STAFF_LINE_HEIGHT = 8;
-    this.NOTE_HEAD_SIZE = { width: 13, height: 10 };
-    this.STAFF_HEIGHT = 4 * this.STAFF_LINE_HEIGHT;
+    this.LINE_SPACING = 8;
+    this.STAFF_HEIGHT = 4 * this.LINE_SPACING;
     this.NOTE_NAMES = ["C", "D", "E", "F", "G", "A", "B"];
-    this.MIN_LINE_LENGTH_RATIO = 0.5; // Staff lines should be at least 50% of page width
+    this.MIN_LINE_LENGTH = 0.6; // 60% of page width
   }
 
-  async processMusicSheet(fileUrl, dimensions) {
+  async analyzePage(imageData) {
     try {
-      console.log("Starting sheet analysis:", { fileUrl, dimensions });
+      console.log("Starting sheet analysis...");
 
-      // Step 1: Get image data from PDF
-      const imageData = await this.getImageData(fileUrl);
-      console.log("Image data retrieved");
+      // Convert to grayscale
+      const grayscale = await ImageProcessor.imageDataToGrayscale(imageData);
+      console.log("Converted to grayscale");
 
-      // Step 2: Convert to grayscale and enhance contrast
-      const enhancedImage = await this.enhanceImage(imageData);
-      console.log("Image enhanced");
+      // Apply threshold
+      const binary = await ImageProcessor.threshold(grayscale);
+      console.log("Applied threshold");
 
-      // Step 3: Detect staff lines
-      const staffLines = await this.detectStaffLines(enhancedImage, dimensions);
-      console.log("Staff lines detected:", staffLines.length);
-
-      // Step 4: Detect note heads
-      const noteHeads = await this.detectNoteHeads(
-        enhancedImage,
-        staffLines,
-        dimensions
+      // Detect staff lines
+      const horizontalLines = await ImageProcessor.detectHorizontalLines(
+        binary,
+        imageData.width,
+        imageData.height,
+        Math.floor(imageData.width * this.MIN_LINE_LENGTH)
       );
-      console.log("Note heads detected:", noteHeads.length);
 
-      // Step 5: Convert positions to musical notes
-      const notes = this.identifyNotes(noteHeads, staffLines);
-      console.log("Notes identified:", notes);
+      // Group lines into staves
+      const staffLines = this.groupIntoStaves(horizontalLines);
+      console.log("Detected staff lines:", staffLines.length);
 
-      return notes;
+      // Detect notes
+      const notes = await this.detectNotes(
+        binary,
+        imageData.width,
+        imageData.height,
+        staffLines
+      );
+      console.log("Detected notes:", notes.length);
+
+      return {
+        staffLines,
+        notes,
+      };
     } catch (error) {
-      console.error("Sheet analysis error:", error);
+      console.error("Analysis error:", error);
       throw error;
     }
   }
 
-  async getImageData(fileUrl) {
-    try {
-      // Download the PDF page as an image
-      const tempFilePath = FileSystem.cacheDirectory + "temp_sheet.jpg";
+  groupIntoStaves(lines) {
+    const staves = [];
+    let currentStaff = [];
 
-      console.log("Downloading file from:", fileUrl);
-      const { uri } = await FileSystem.downloadAsync(fileUrl, tempFilePath);
-      console.log("File downloaded to:", uri);
-
-      // Read the file as base64
-      const base64Data = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      return base64Data;
-    } catch (error) {
-      console.error("Error getting image data:", error);
-      throw error;
-    }
-  }
-
-  async enhanceImage(base64Image) {
-    try {
-      // Convert base64 to array buffer for processing
-      const binaryString = atob(base64Image);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-
-      // Create canvas for image processing
-      const img = new Image();
-      img.src = "data:image/jpeg;base64," + base64Image;
-
-      await new Promise((resolve) => {
-        img.onload = resolve;
-      });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-
-      // Convert to grayscale and enhance contrast
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-
-        // Convert to grayscale
-        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        // Enhance contrast using threshold
-        const threshold = 128;
-        const enhancedValue = gray < threshold ? 0 : 255;
-
-        data[i] = data[i + 1] = data[i + 2] = enhancedValue;
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-      return imageData;
-    } catch (error) {
-      console.error("Error enhancing image:", error);
-      throw error;
-    }
-  }
-
-  async detectStaffLines(imageData, dimensions) {
-    try {
-      const width = dimensions.width;
-      const height = dimensions.height;
-      const data = imageData.data;
-      const staffLines = [];
-      const minLineLength = width * this.MIN_LINE_LENGTH_RATIO;
-
-      // Horizontal line detection
-      for (let y = 0; y < height; y++) {
-        let blackPixelCount = 0;
-        let lineStart = -1;
-
-        for (let x = 0; x < width; x++) {
-          const index = (y * width + x) * 4;
-          const isBlack = data[index] < 128; // Check if pixel is black
-
-          if (isBlack) {
-            if (lineStart === -1) lineStart = x;
-            blackPixelCount++;
-          } else if (lineStart !== -1) {
-            // End of line found
-            const lineLength = x - lineStart;
-            if (lineLength >= minLineLength) {
-              staffLines.push({
-                y,
-                start: lineStart,
-                end: x,
-                length: lineLength,
-              });
-            }
-            lineStart = -1;
-            blackPixelCount = 0;
-          }
-        }
-      }
-
-      // Group lines into staff systems
-      return this.groupStaffLines(staffLines);
-    } catch (error) {
-      console.error("Error detecting staff lines:", error);
-      throw error;
-    }
-  }
-
-  groupStaffLines(lines) {
-    // Sort lines by vertical position
     lines.sort((a, b) => a.y - b.y);
 
-    const staffSystems = [];
-    let currentSystem = [];
-
     for (let i = 0; i < lines.length; i++) {
-      if (currentSystem.length === 0) {
-        currentSystem.push(lines[i]);
+      if (currentStaff.length === 0) {
+        currentStaff.push(lines[i]);
       } else {
-        const lastLine = currentSystem[currentSystem.length - 1];
+        const lastLine = currentStaff[currentStaff.length - 1];
         const spacing = lines[i].y - lastLine.y;
 
-        if (spacing <= this.STAFF_LINE_HEIGHT * 1.5) {
-          currentSystem.push(lines[i]);
+        if (spacing <= this.LINE_SPACING * 1.5) {
+          currentStaff.push(lines[i]);
         } else {
-          if (currentSystem.length === 5) {
-            staffSystems.push([...currentSystem]);
+          if (currentStaff.length === 5) {
+            staves.push([...currentStaff]);
           }
-          currentSystem = [lines[i]];
+          currentStaff = [lines[i]];
         }
       }
     }
 
-    // Add the last system if complete
-    if (currentSystem.length === 5) {
-      staffSystems.push(currentSystem);
+    if (currentStaff.length === 5) {
+      staves.push(currentStaff);
     }
 
-    return staffSystems;
+    return staves;
   }
 
-  // We'll continue with note detection in the next part...
+  async detectNotes(binaryImage, width, height, staffLines) {
+    const notes = [];
+    const noteHeadTemplate = this.createNoteHeadTemplate();
+
+    for (const staff of staffLines) {
+      const staffTop = staff[0].y;
+      const staffBottom = staff[4].y;
+      const searchArea = {
+        top: staffTop - this.STAFF_HEIGHT,
+        bottom: staffBottom + this.STAFF_HEIGHT,
+      };
+
+      // Template matching in staff area
+      for (let y = searchArea.top; y < searchArea.bottom; y++) {
+        for (let x = 0; x < width; x++) {
+          const match = this.matchTemplate(
+            binaryImage,
+            x,
+            y,
+            width,
+            noteHeadTemplate
+          );
+
+          if (match > 0.8) {
+            // 80% confidence threshold
+            notes.push({
+              x,
+              y,
+              confidence: match,
+            });
+          }
+        }
+      }
+    }
+
+    return this.convertToMusicalNotes(notes, staffLines);
+  }
+
+  createNoteHeadTemplate() {
+    return [
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+    ];
+  }
+
+  matchTemplate(image, x, y, width, template) {
+    let matches = 0;
+    let total = 0;
+
+    for (let ty = 0; ty < template.length; ty++) {
+      for (let tx = 0; tx < template[0].length; tx++) {
+        const ix = x + tx;
+        const iy = y + ty;
+        const imagePixel = image[iy * width + ix] === 0 ? 1 : 0;
+
+        if (template[ty][tx] === imagePixel) {
+          matches++;
+        }
+        total++;
+      }
+    }
+
+    return matches / total;
+  }
+
+  convertToMusicalNotes(notePositions, staffLines) {
+    return notePositions.map((pos, index) => {
+      const noteInfo = this.getNoteFromPosition(pos, staffLines);
+      return {
+        id: `note-${index}`,
+        type: "note",
+        position: {
+          x: pos.x,
+          y: pos.y,
+        },
+        value: noteInfo.noteName + noteInfo.octave,
+        confidence: pos.confidence,
+      };
+    });
+  }
+
+  getNoteFromPosition(position, staffLines) {
+    const staff = this.findClosestStaff(position.y, staffLines);
+    const staffTop = staff[0].y;
+    const staffSpacing = (staff[4].y - staffTop) / 4;
+
+    const relativePosition = (position.y - staffTop) / staffSpacing;
+    const noteIndex = Math.round(relativePosition);
+
+    const octave = Math.floor(noteIndex / 7) + 4;
+    const noteNameIndex = ((noteIndex % 7) + 7) % 7;
+
+    return {
+      noteName: this.NOTE_NAMES[noteNameIndex],
+      octave,
+      confidence: position.confidence,
+    };
+  }
+
+  findClosestStaff(y, staffLines) {
+    return staffLines.reduce((closest, staff) => {
+      const staffMiddle = (staff[0].y + staff[4].y) / 2;
+      const currentDistance = Math.abs(y - staffMiddle);
+      const closestDistance = Math.abs(y - (closest[0].y + closest[4].y) / 2);
+
+      return currentDistance < closestDistance ? staff : closest;
+    });
+  }
 }
 
-// Export the processing function
 export const processMusicSheet = async (fileUrl, pageNumber, dimensions) => {
   try {
-    const detector = new MusicNoteDetector();
-    return await detector.processMusicSheet(fileUrl, dimensions);
+    const analyzer = new MusicSheetAnalyzer();
+    const analysis = await analyzer.analyzePage({
+      width: dimensions?.width || 595,
+      height: dimensions?.height || 842,
+      data: new Uint8Array(
+        dimensions?.width * dimensions?.height * 4 || 595 * 842 * 4
+      ),
+    });
+
+    return analysis.notes;
   } catch (error) {
     console.error("Music recognition error:", error);
     throw error;
